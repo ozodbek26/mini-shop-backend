@@ -11,10 +11,10 @@ const Users = [];
 const product = [];
 const RegistrationSchema = z
   .object({
-    email: z.email().min(10).max(50),
-    username: z.string().min(10).max(20),
+    email: z.email().min(3).max(50),
+    username: z.string().min(5).max(20),
     Password: z.string().min(8).max(20),
-    age: z.string().length(4),
+    age: z.number().min(18).max(120),
     img: z.string().optional(),
     status: z.enum(["покупатель", "продавец"]).default("покупатель"),
     aboutmyself: z
@@ -53,15 +53,20 @@ app.post("/registration", (req, res) => {
   const result = RegistrationSchema.safeParse(req.body);
   if (!result.success) {
     return res.status(400).json({
-      errors: "ваше данные не прошли проверку  мы вели не правильно  ",
+      errors: "ваше данные не прошли проверку  мы вели не правильно",
     });
   }
-  res.json({
-    message: "Регистрация прошла успешно",
-    user: result.data,
-  });
+  const w = Users.find((e) => e.username === result.data.username);
+  if (w) {
+    return res.status(400).json({
+      errors: "такой пользователь уже существует",
+    });
+  }
 
   Users.push(result.data);
+  res.json({
+    message: "Регистрация прошла успешно",
+  });
 });
 
 const aboutMyselfSchema = z
@@ -73,20 +78,17 @@ const aboutMyselfSchema = z
 app.post("/userverification", (req, res) => {
   const { username, Password } = req.body;
 
-  const user = Users.find((e) => e.username === username);
+  const user = Users.find(
+    (e) => e.username === username && e.Password === Password
+  );
 
   if (!user) {
-    res.status(400).json({
-      success: false,
-      message: "Пользователь не найден или данные неверны status 400",
-    });
-  } else {
-    res.json({
-      success: true,
-      message: "Пользователь найден, добро пожаловать!!!",
-      user,
-    });
+    return res
+      .status(400)
+      .json({ success: false, message: "Неверный логин или пароль" });
   }
+
+  res.json({ success: true, message: `Добро пожаловать! ${user.username} ` });
 });
 
 const checkingGoods = z
@@ -285,16 +287,7 @@ app.get("/productreq2", (req, res) => {
   res.json(product);
 });
 
-
-
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
   console.log(`http://localhost:${PORT}`);
 });
-
-
-
-
-
-
-

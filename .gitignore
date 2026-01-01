@@ -2,3 +2,5 @@
 .env
 dist/
 npm-debug.log
+
+data/*.json
