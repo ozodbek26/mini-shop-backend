@@ -2,13 +2,56 @@ const express = require("express");
 const cors = require("cors");
 const app = express();
 const PORT = 7000;
-const { z, json } = require("zod");
+// const { z, json } = require("zod");
+const z = require("zod");
 
 app.use(cors());
 app.use(express.json());
 
-const Users = [];
-const product = [];
+//--------------------------------------------------------------------------------------
+
+const fs = require("fs");
+const path = require("path");
+const { error } = require("console");
+const DATA_DIR = path.join(__dirname, "data");
+const USERS_FILE = path.join(DATA_DIR, "users.json");
+const PRODUCTS_FILE = path.join(DATA_DIR, "products.json");
+
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, "[]", "utf8");
+if (!fs.existsSync(PRODUCTS_FILE))
+  fs.writeFileSync(PRODUCTS_FILE, "[]", "utf8");
+
+function loadJSON(file, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function saveJSONAtomic(file, data) {
+  try {
+    const tmp = file + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    console.error("Save error", e);
+  }
+}
+
+const Users = loadJSON(USERS_FILE, []);
+const product = loadJSON(PRODUCTS_FILE, []);
+
+function saveUsers() {
+  saveJSONAtomic(USERS_FILE, Users);
+}
+function saveProducts() {
+  saveJSONAtomic(PRODUCTS_FILE, product);
+}
+
+//--------------------------------------------------------------------------------------
+
 const RegistrationSchema = z
   .object({
     email: z.email().min(3).max(50),
@@ -32,12 +75,7 @@ const username_Password = z
   .partial()
   .strict();
 
-app.get("/", (req, res) => {
-  res.send("API is running");
-});
-
 const changeImgSchema = z
-
   .object({
     img: z.string().min(1),
   })
@@ -48,6 +86,10 @@ const statusSchema = z
     status: z.enum(["покупатель", "продавец"]),
   })
   .strict();
+
+app.get("/", (req, res) => {
+  res.send("API is running");
+});
 
 app.post("/registration", (req, res) => {
   const result = RegistrationSchema.safeParse(req.body);
@@ -64,6 +106,7 @@ app.post("/registration", (req, res) => {
   }
 
   Users.push(result.data);
+  saveUsers();
   res.json({
     message: "Регистрация прошла успешно",
   });
@@ -131,6 +174,8 @@ app.post("/change/username_Password", (req, res) => {
   user.Password =
     newData.data.Password !== "null" ? newData.data.Password : user.Password;
 
+  saveUsers();
+
   res.json({
     message: "Смена имени/пароля прошла успешно",
     user,
@@ -157,6 +202,7 @@ app.post("/change/img", (req, res) => {
   }
 
   user.img = parsed.data.img;
+  saveUsers();
 
   res.json({
     success: true,
@@ -164,6 +210,35 @@ app.post("/change/img", (req, res) => {
     user,
   });
 });
+
+
+app.post("/user_image_submission", (req, res) => {
+  console.log("Запрос пришёл, body:", req.body);
+
+  let username = req.body.username;
+
+  if (typeof username === "string") {
+    username = username.trim();
+    if (username.startsWith('"') && username.endsWith('"')) {
+      username = username.slice(1, -1);
+    }
+  }
+
+  if (!username) {
+    return res.status(400).json({ error: "Нет username" });
+  }
+
+  const user = Users.find(u => u.username === username);
+
+  if (!user) {
+    console.log("Не найден пользователь:", username);
+    return res.status(404).json({ error: "Пользователь не найден" });
+  }
+
+  console.log("Аватарка отправлена для:", username);
+  res.json({ image: user.img || null });
+});
+
 
 app.post("/change/status", (req, res) => {
   const parsed = statusSchema.safeParse(req.body);
@@ -184,6 +259,7 @@ app.post("/change/status", (req, res) => {
   }
 
   user.status = parsed.data.status;
+  saveUsers();
 
   res.json({
     success: true,
@@ -234,6 +310,7 @@ app.post("/change/aboutmyself", (req, res) => {
   }
 
   user.aboutmyself = parsed.data.aboutmyself;
+  saveUsers();
 
   res.json({
     success: true,
@@ -276,6 +353,7 @@ app.post("/productreq", (req, res) => {
   };
 
   product.push(newProduct);
+  saveProducts();
 
   res.json({
     message: "Продукт успешно добавлен",
