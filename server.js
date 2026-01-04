@@ -2,17 +2,21 @@ const express = require("express");
 const cors = require("cors");
 const app = express();
 const PORT = 7000;
+const crypto = require("crypto");
+
 // const { z, json } = require("zod");
 const z = require("zod");
 
 app.use(cors());
 app.use(express.json());
+const nodemailer = require("nodemailer");
 
 //--------------------------------------------------------------------------------------
 
 const fs = require("fs");
 const path = require("path");
 const { error } = require("console");
+const { text } = require("stream/consumers");
 const DATA_DIR = path.join(__dirname, "data");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 const PRODUCTS_FILE = path.join(DATA_DIR, "products.json");
@@ -64,28 +68,28 @@ const RegistrationSchema = z
       .string()
       .optional()
       .default("про вас нет никакой инфы напишите о себе :)"),
+    // balance: z.string().optional(),
   })
   .strict();
 
-const username_Password = z
+const changePasswordSchema = z
   .object({
-    username: z.string().min(10).max(20).default("null"),
-    Password: z.string().min(8).max(20).default("null"),
-  })
-  .partial()
-  .strict();
-
-const changeImgSchema = z
-  .object({
-    img: z.string().min(1),
+    newPassword: z.string().min(8).max(20),
+    oldUsername: z.string().min(5).max(20),
   })
   .strict();
 
-const statusSchema = z
-  .object({
-    status: z.enum(["покупатель", "продавец"]),
-  })
-  .strict();
+// const changeImgSchema = z
+//   .object({
+//     img: z.string().min(1),
+//   })
+//   .strict();
+
+// const statusSchema = z
+//   .object({
+//     status: z.enum(["покупатель", "продавец"]),
+//   })
+//   .strict();
 
 app.get("/", (req, res) => {
   res.send("API is running");
@@ -104,8 +108,14 @@ app.post("/registration", (req, res) => {
       errors: "такой пользователь уже существует",
     });
   }
+  // balance;
 
-  Users.push(result.data);
+  const newUser = {
+    ...result.data,
+    balance: 0,
+  };
+
+  Users.push(newUser);
   saveUsers();
   res.json({
     message: "Регистрация прошла успешно",
@@ -134,66 +144,22 @@ app.post("/userverification", (req, res) => {
   res.json({ success: true, message: `Добро пожаловать! ${user.username} ` });
 });
 
-const checkingGoods = z
-  .object({
-    // user: z.string().default("доктор пеппер"),
-    price: z.string(),
-    description: z.string(),
-    telephone: z.string().optional(),
-    whatsapp: z.string().optional(),
-    telegram: z.string().optional(),
-    uniquename: z.string(),
-    img1: z.string(),
-    img2: z.string().optional(),
-    img3: z.string().optional(),
-    img4: z.string().optional(),
-    img5: z.string().optional(),
-  })
-  .strict();
+app.post("/change/password", (req, res) => {
+  const result = changePasswordSchema.safeParse(req.body);
 
-app.post("/change/username_Password", (req, res) => {
-  const newData = username_Password.safeParse(req.body);
-  const oldname = req.body.oldUser;
-
-  if (!newData.success) {
+  if (!result.success) {
     return res.status(400).json({
-      errors: "Ваши данные не прошли проверку, заполните правильно",
+      error: "Новый пароль должен быть от 8 до 20 символов",
     });
   }
+  const { newPassword, oldUsername } = result.data;
 
-  const user = Users.find((e) => e.username === oldname.username);
-
-  if (!user) {
-    return res.status(400).json({
-      errors: "Такого пользователя не существует.",
-    });
+  let cleanUsername = oldUsername;
+  if (typeof cleanUsername === "string") {
+    cleanUsername = cleanUsername.trim().replace(/^"(.*)"$/, "$1");
   }
 
-  user.username =
-    newData.data.username !== "null" ? newData.data.username : user.username;
-  user.Password =
-    newData.data.Password !== "null" ? newData.data.Password : user.Password;
-
-  saveUsers();
-
-  res.json({
-    message: "Смена имени/пароля прошла успешно",
-    user,
-  });
-});
-
-app.post("/change/img", (req, res) => {
-  const { oldUser, img } = req.body;
-
-  const parsed = changeImgSchema.safeParse({ img });
-
-  if (!parsed.success) {
-    return res.status(400).json({
-      error: "Неверный формат изображения",
-    });
-  }
-
-  const user = Users.find((e) => e.username === oldUser.username);
+  const user = Users.find((u) => u.username === cleanUsername);
 
   if (!user) {
     return res.status(400).json({
@@ -201,20 +167,77 @@ app.post("/change/img", (req, res) => {
     });
   }
 
-  user.img = parsed.data.img;
+  user.Password = newPassword;
   saveUsers();
 
   res.json({
     success: true,
-    message: "Картинка успешно обновлена",
-    user,
+    message: "Пароль успешно изменён",
   });
 });
 
+app.post("/change/username", (req, res) => {
+  console.log("Запрос на смену имени:", req.body);
+
+  const { oldUsername, newUsername } = req.body;
+
+  if (!oldUsername || !newUsername) {
+    return res.status(400).json({
+      error: "Старое и новое имя обязательны",
+    });
+  }
+
+  if (newUsername.length < 5 || newUsername.length > 20) {
+    return res.status(400).json({
+      error: "Новое имя должно быть от 5 до 20 символов",
+    });
+  }
+
+  let cleanOld = oldUsername.trim().replace(/^"(.*)"$/, "$1");
+  let cleanNew = newUsername.trim();
+
+  const userIndex = Users.findIndex((u) => u.username === cleanOld);
+
+  if (userIndex === -1) {
+    console.log("Пользователь не найден");
+    return res.status(400).json({
+      error: "Пользователь с таким именем не найден",
+    });
+  }
+
+  const alreadyExists = Users.find(
+    (u) => u.username === cleanNew && u.username !== cleanOld
+  );
+
+  if (alreadyExists) {
+    console.log("Имя уже занято:", cleanNew);
+    return res.status(400).json({
+      error: "Это имя уже занято",
+    });
+  }
+
+  console.log("Меняем имя с", Users[userIndex].username, "на", cleanNew);
+
+  Users[userIndex].username = cleanNew;
+
+  console.log("Новый массив Users:", Users);
+
+  try {
+    saveUsers();
+    console.log("Файл users.json успешно сохранён");
+  } catch (err) {
+    console.error("ОШИБКА ПРИ СОХРАНЕНИИ ФАЙЛА:", err);
+    return res.status(500).json({ error: "Не удалось сохранить изменения" });
+  }
+
+  res.json({
+    success: true,
+    message: "Имя успешно изменено",
+    newUsername: cleanNew,
+  });
+});
 
 app.post("/user_image_submission", (req, res) => {
-  console.log("Запрос пришёл, body:", req.body);
-
   let username = req.body.username;
 
   if (typeof username === "string") {
@@ -228,7 +251,7 @@ app.post("/user_image_submission", (req, res) => {
     return res.status(400).json({ error: "Нет username" });
   }
 
-  const user = Users.find(u => u.username === username);
+  const user = Users.find((u) => u.username === username);
 
   if (!user) {
     console.log("Не найден пользователь:", username);
@@ -236,61 +259,47 @@ app.post("/user_image_submission", (req, res) => {
   }
 
   console.log("Аватарка отправлена для:", username);
-  res.json({ image: user.img || null });
-});
-
-
-app.post("/change/status", (req, res) => {
-  const parsed = statusSchema.safeParse(req.body);
-  const oldUser = req.body.oldUser;
-
-  if (!parsed.success) {
-    return res.status(400).json({
-      error: "Неверный статус",
-    });
-  }
-
-  const user = Users.find((e) => e.username === oldUser.username);
-
-  if (!user) {
-    return res.status(400).json({
-      error: "Пользователь не найден",
-    });
-  }
-
-  user.status = parsed.data.status;
-  saveUsers();
-
   res.json({
-    success: true,
-    message: "Статус успешно изменён",
-    user,
+    image: user.img,
+    aboutmyself: user.aboutmyself || null,
+    balance: user.balance,
   });
 });
 
-app.get("/user/info", (req, res) => {
-  const { username, Password } = req.query;
+const changePhotoSchema = z
+  .object({
+    img: z.string().min(1),
+  })
+  .strict();
 
-  const user = Users.find(
-    (e) => e.username === username && e.Password === Password
-  );
+app.post("/change/photo", (req, res) => {
+  const { username, img } = req.body;
 
+  const parsed = changePhotoSchema.safeParse({ img });
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "Неверный формат изображения",
+    });
+  }
+
+  const user = Users.find((u) => u.username === username);
   if (!user) {
-    return res.status(401).json({
+    return res.status(404).json({
       error: "Пользователь не найден",
     });
   }
 
+  user.img = parsed.data.img;
+  saveUsers();
+
   res.json({
-    username: user.username,
-    email: user.email,
-    status: user.status,
+    message: "Картинка успешно изменена",
     img: user.img,
   });
 });
 
 app.post("/change/aboutmyself", (req, res) => {
-  const { oldUser, aboutmyself } = req.body;
+  const { username, aboutmyself } = req.body;
 
   const parsed = aboutMyselfSchema.safeParse({ aboutmyself });
   if (!parsed.success) {
@@ -299,9 +308,7 @@ app.post("/change/aboutmyself", (req, res) => {
     });
   }
 
-  const user = Users.find(
-    (e) => e.username === oldUser.username && e.Password === oldUser.Password
-  );
+  const user = Users.find((e) => e.username === username);
 
   if (!user) {
     return res.status(400).json({
@@ -315,54 +322,133 @@ app.post("/change/aboutmyself", (req, res) => {
   res.json({
     success: true,
     message: "Информация о себе успешно обновлена",
-    user,
+    aboutmyself: aboutmyself,
   });
 });
 
-app.post("/productreq", (req, res) => {
-  const parsed = checkingGoods.safeParse(req.body);
-
-  if (!parsed.success) {
-    return res.status(400).json({
-      error: "Что-то пошло не так, проверьте поля",
-    });
-  }
-
+app.post("/delete/account", (req, res) => {
   const { username } = req.body;
 
-  const user = Users.find((e) => e.username === username);
-
-  if (!user) {
-    return res.status(400).json({
-      error: "Пользователь не найден",
-    });
+  if (!username) {
+    return res.status(400).json({ error: "Нет username" });
   }
 
-  const f1 = product.find((e) => e.uniquename === parsed.uniquename);
+  const userIndex = Users.findIndex((u) => u.username === username);
 
-  if (f1) {
-    return res.status(400).json({
-      error: "uniquename уже занять",
-    });
+  if (userIndex === -1) {
+    return res.status(404).json({ error: "Пользователь не найден" });
   }
+  Users.splice(userIndex, 1);
 
-  const newProduct = {
-    ...parsed.data,
-    username: user.username,
-    imgprofile: user.img || null,
-  };
+  saveUsers();
 
-  product.push(newProduct);
-  saveProducts();
-
-  res.json({
-    message: "Продукт успешно добавлен",
-    product: newProduct,
-  });
+  res.json({ success: true, message: "Аккаунт успешно удалён" });
 });
 
-app.get("/productreq2", (req, res) => {
-  res.json(product);
+const RecoverAccountSchema = z
+  .object({
+    emailInput: z.string().email("Некорректный email").min(3).max(50),
+  })
+  .strict();
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: "ozodbek200017@gmail.com",
+    pass: "fdcr sqtt dush auau",
+  },
+});
+
+const recoveryTokens = [];
+
+app.post("/recover-account", async (req, res) => {
+  try {
+    const parsed = RecoverAccountSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Некорректный email" });
+    }
+
+    const { emailInput } = parsed.data;
+    const user = Users.find((u) => u.email === emailInput);
+
+    if (user) {
+      const randomPart = crypto.randomBytes(32).toString("hex");
+      const expiresAt = Date.now() + 5 * 60 * 1000;
+
+      const newToken = {
+        randomPart,
+        expiresAt,
+        email: user.email,
+        username: user.username,
+        Password: user.Password,
+      };
+
+      const existingIndex = recoveryTokens.findIndex(
+        (t) => t.email === user.email
+      );
+      if (existingIndex !== -1) {
+        recoveryTokens.splice(existingIndex, 1);
+      }
+
+      recoveryTokens.push(newToken);
+
+      await transporter.sendMail({
+        from: '"My App" <ozodbek200017@gmail.com>',
+        to: user.email,
+        subject: "Восстановление пароля",
+        text: `Ваш код: ${randomPart}\n\nКод действителен 5 минут.`,
+        html: `<p>Ваш код: <strong>${randomPart}</strong></p><p>Действителен 5 минут.</p>`,
+      });
+
+      console.log("Письмо отправлено на:", user.email);
+      console.log("Код:", randomPart);
+    }
+
+    res.json({
+      success: true,
+      message: "Если email зарегистрирован, мы отправили код на почту",
+    });
+  } catch (error) {
+    console.error("Ошибка отправки:", error);
+    res.status(500).json({ error: "Ошибка сервера" });
+  }
+});
+
+const TokenCheckSchema = z.object({
+  tokenInput: z.string().length(64),
+});
+
+app.post("/time-check", async (req, res) => {
+  const parsed = TokenCheckSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Неверный формат кода" });
+  }
+
+  const { tokenInput } = parsed.data;
+
+  const tokenData = recoveryTokens.find((t) => t.randomPart === tokenInput);
+
+  if (!tokenData) {
+    return res.status(400).json({ error: "Неверный или просроченный код" });
+  }
+
+  if (Date.now() > tokenData.expiresAt) {
+    const index = recoveryTokens.indexOf(tokenData);
+    if (index !== -1) recoveryTokens.splice(index, 1);
+
+    return res.status(400).json({ error: "Код истёк" });
+  }
+
+  const index = recoveryTokens.indexOf(tokenData);
+  if (index !== -1) recoveryTokens.splice(index, 1);
+
+  res.json({
+    success: true,
+    message: "Код подтверждён!",
+    username: tokenData.username,
+    Password: tokenData.Password,
+  });
 });
 
 app.listen(PORT, () => {
