@@ -6,6 +6,8 @@ const crypto = require("crypto");
 
 // const { z, json } = require("zod");
 const z = require("zod");
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 app.use(cors());
 app.use(express.json());
@@ -449,6 +451,48 @@ app.post("/time-check", async (req, res) => {
     username: tokenData.username,
     Password: tokenData.Password,
   });
+});
+
+const checkingProduct = z
+  .object({
+    username: z.string().min(1, "Username обязателен"),
+    price: z.number().min(1).max(9999999999),
+    productName: z.string().min(10).max(250),
+    peculiarities: z.string().min(20).max(750),
+    deliveryMethod: z.string().min(10).max(250),
+    storageTime: z.string().min(10).max(250),
+    category: z.string().min(1),
+    hashtags: z.array(z.string()).min(5).max(20),
+    images: z.array(z.string()).min(5).max(5),
+  })
+  .strict();
+
+app.post("/checking-product", (req, res) => {
+  const body = {
+    ...req.body,
+    price: Number(req.body.price),
+  };
+
+  const parsed = checkingProduct.safeParse(body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: parsed.error.errors,
+      message: "вы отправили не корректные  данные",
+    });
+  }
+  const randomPart = crypto.randomBytes(32).toString("hex");
+
+  const productWithToken = { ...parsed.data, token: randomPart };
+
+  product.push(productWithToken);
+  saveProducts();
+
+  res.json({ message: "успешно опубликовано", data: parsed.data });
+});
+
+app.get("/product", (req, res) => {
+  res.json(product);
 });
 
 app.listen(PORT, () => {
