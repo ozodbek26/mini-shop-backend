@@ -1,37 +1,36 @@
 const express = require("express");
 const cors = require("cors");
 const app = express();
-const PORT = 7000;
+// const PORT = 7000;
+const PORT = process.env.PORT || 7000; // <- Render даст свой порт, 7000 для локальной проверки
+
 const crypto = require("crypto");
-
-// const { z, json } = require("zod");
 const z = require("zod");
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
-
-app.use(cors());
-app.use(express.json());
-const nodemailer = require("nodemailer");
-
-//--------------------------------------------------------------------------------------
-
 const fs = require("fs");
 const path = require("path");
-const { error } = require("console");
-const { text } = require("stream/consumers");
+const nodemailer = require("nodemailer");
+
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(cors());
+
+// === ФАЙЛЫ ДАННЫХ ===
 const DATA_DIR = path.join(__dirname, "data");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 const PRODUCTS_FILE = path.join(DATA_DIR, "products.json");
+const BASKET_FILE = path.join(DATA_DIR, "basket.json");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, "[]", "utf8");
 if (!fs.existsSync(PRODUCTS_FILE))
   fs.writeFileSync(PRODUCTS_FILE, "[]", "utf8");
+if (!fs.existsSync(BASKET_FILE)) fs.writeFileSync(BASKET_FILE, "[]", "utf8");
 
 function loadJSON(file, fallback) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (e) {
+    console.error(`Ошибка чтения ${file}:`, e);
     return fallback;
   }
 }
@@ -42,12 +41,13 @@ function saveJSONAtomic(file, data) {
     fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
     fs.renameSync(tmp, file);
   } catch (e) {
-    console.error("Save error", e);
+    console.error("Ошибка сохранения:", e);
   }
 }
 
-const Users = loadJSON(USERS_FILE, []);
-const product = loadJSON(PRODUCTS_FILE, []);
+let Users = loadJSON(USERS_FILE, []);
+let product = loadJSON(PRODUCTS_FILE, []);
+let basket = loadJSON(BASKET_FILE, []);
 
 function saveUsers() {
   saveJSONAtomic(USERS_FILE, Users);
@@ -55,8 +55,9 @@ function saveUsers() {
 function saveProducts() {
   saveJSONAtomic(PRODUCTS_FILE, product);
 }
-
-//--------------------------------------------------------------------------------------
+function saveBasket() {
+  saveJSONAtomic(BASKET_FILE, basket);
+}
 
 const RegistrationSchema = z
   .object({
@@ -70,7 +71,6 @@ const RegistrationSchema = z
       .string()
       .optional()
       .default("про вас нет никакой инфы напишите о себе :)"),
-    // balance: z.string().optional(),
   })
   .strict();
 
@@ -110,7 +110,6 @@ app.post("/registration", (req, res) => {
       errors: "такой пользователь уже существует",
     });
   }
-  // balance;
 
   const newUser = {
     ...result.data,
@@ -398,8 +397,8 @@ app.post("/recover-account", async (req, res) => {
         from: '"My App" <ozodbek200017@gmail.com>',
         to: user.email,
         subject: "Восстановление пароля",
-        text: `Ваш код: ${randomPart}\n\nКод действителен 5 минут.`,
-        html: `<p>Ваш код: <strong>${randomPart}</strong></p><p>Действителен 5 минут.</p>`,
+        text: `Ваш код: ${randomPart}\n\nКод исчезнет через 5 минут.`,
+        html: `<p>Ваш код: <strong>${randomPart}</strong></p><p>код исчезнет через 5 минут.</p>`,
       });
 
       console.log("Письмо отправлено на:", user.email);
@@ -495,7 +494,89 @@ app.get("/product", (req, res) => {
   res.json(product);
 });
 
+const checkoutSchema = z.object({
+  username: z.string().min(1),
+  product1token: z.string().min(1),
+  price: z.number().positive("price должен быть числом больше 0"),
+});
+
+app.post("/checkout-basket", (req, res) => {
+  const parseResult = checkoutSchema.safeParse(req.body);
+
+  if (!parseResult.success) {
+    return res.status(400).json({ error: parseResult.error.errors[0].message });
+  }
+
+  const { username, product1token, price } = parseResult.data;
+
+  const foundProduct = product.find((p) => p.token === product1token);
+  if (!foundProduct) {
+    return res.status(400).json({ error: "Такого продукта нет на сервере" });
+  }
+
+  const userExists = Users.some((u) => u.username === username);
+  if (!userExists) {
+    return res.status(400).json({ error: "Вы не зарегистрированы" });
+  }
+
+  if (username === foundProduct.username) {
+    return res
+      .status(400)
+      .json({ error: "Вы не можете купить продукт у себя" });
+  }
+
+  const alreadyInCart = basket.some(
+    (e) => e.product === product1token && e.whoWantsuser === username
+  );
+
+  if (alreadyInCart) {
+    return res.status(400).json({ error: "этот продукт уже в корзине" });
+  }
+
+  basket.push({
+    whoWantsuser: username,
+    toWhomuser: foundProduct.username,
+    product: foundProduct.token,
+    date: Date.now(),
+    price,
+  });
+
+  saveBasket();
+
+  res.json({
+    success: true,
+    message: "Продукт успешно добавлен в корзину",
+  });
+});
+
+app.post("/check-cart", (req, res) => {
+  const { username } = req.body;
+
+  if (!username) {
+    return res.status(400).json({ error: "username обязателен" });
+  }
+
+  const user = Users.find((e) => e.username === username);
+  if (!user) {
+    return res.status(400).json({ error: "вы не зарегистрированы" });
+  }
+
+  const userBasket = basket.filter((e) => e.whoWantsuser === username);
+
+  const productServer = product.filter((p) =>
+    userBasket.some((b) => b.product === p.token)
+  );
+
+  res.json({
+    success: true,
+    items: userBasket,
+    products: productServer,
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
   console.log(`http://localhost:${PORT}`);
 });
+
+// GoDaddy
