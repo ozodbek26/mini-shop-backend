@@ -93,9 +93,30 @@ const changePasswordSchema = z
 //   })
 //   .strict();
 
+// app.get("/", (req, res) => {
+//   res.send("API is running");
+//   res.json(Users);
+// });
+
+// Главная страница API
 app.get("/", (req, res) => {
-  res.send("API is running");
-  res.json(Users);
+  res.json({ message: "Mini Shop API is running!" });
+});
+
+app.get("/users", (req, res) => {
+  const publicUsers = Users.map((user) => ({
+    username: user.username,
+    img: user.img || null,
+    age: user.age,
+    status: user.status || "покупатель",
+    aboutmyself: user.aboutmyself,
+    balance: user.balance,
+  }));
+
+  res.json({
+    users: publicUsers,
+    total: publicUsers.length,
+  });
 });
 
 app.post("/registration", (req, res) => {
