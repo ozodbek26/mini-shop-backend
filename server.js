@@ -130,21 +130,30 @@ const aboutMyselfSchema = z
   .strict();
 
 app.post("/userverification", (req, res) => {
-  const { username, Password } = req.body;
+  const { username, password } = req.body;
 
-  const user = Users.find((e) => e.username === username);
-  const user2 = Users.find((e) => e.Password === Password);
+  if (!username || !password) {
+    return res.status(400).json({
+      success: false,
+      message: "Введите логин и пароль",
+    });
+  }
+
+  const user = Users.find(
+    (u) => u.username === username && u.Password === password
+  );
 
   if (!user) {
-    return res.status(400).json({ success: false, message: "Неверный логин " });
-  }
-  if (!user2) {
-    return res
-      .status(400)
-      .json({ success: false, message: "Неверный  пароль" });
+    return res.status(400).json({
+      success: false,
+      message: "Неверный логин или пароль",
+    });
   }
 
-  res.json({ success: true, message: `Добро пожаловать! ${user.username} ` });
+  res.json({
+    success: true,
+    message: `Добро пожаловать, ${user.username}!`,
+  });
 });
 
 app.post("/change/password", (req, res) => {
