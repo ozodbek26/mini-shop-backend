@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const app = express();
 // const PORT = 7000;
-const PORT = process.env.PORT || 7000; // <- Render даст свой порт, 7000 для локальной проверки
+const PORT = process.env.PORT || 10000; // <- Render даст свой порт, 7000 для локальной проверки
 
 const crypto = require("crypto");
 const z = require("zod");
@@ -574,9 +574,12 @@ app.post("/check-cart", (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-  console.log(`http://localhost:${PORT}`);
+// app.listen(PORT, () => {
+//   console.log(`Server listening on port ${PORT}`);
+//   console.log(`http://localhost:${PORT}`);
+// });
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Сервер успешно запущен на порту ${PORT}`);
 });
 
 // GoDaddy
