@@ -132,14 +132,16 @@ const aboutMyselfSchema = z
 app.post("/userverification", (req, res) => {
   const { username, Password } = req.body;
 
-  const user = Users.find(
-    (e) => e.username === username && e.Password === Password
-  );
+  const user = Users.find((e) => e.username === username);
+  const user2 = Users.find((e) => e.Password === Password);
 
   if (!user) {
+    return res.status(400).json({ success: false, message: "Неверный логин " });
+  }
+  if (!user2) {
     return res
       .status(400)
-      .json({ success: false, message: "Неверный логин или пароль" });
+      .json({ success: false, message: "Неверный  пароль" });
   }
 
   res.json({ success: true, message: `Добро пожаловать! ${user.username} ` });
