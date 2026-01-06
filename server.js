@@ -95,6 +95,7 @@ const changePasswordSchema = z
 
 app.get("/", (req, res) => {
   res.send("API is running");
+  res.json(Users);
 });
 
 app.post("/registration", (req, res) => {
