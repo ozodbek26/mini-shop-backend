@@ -862,44 +862,44 @@ app.post("/check-cart", async (req, res) => {
 
 // hashtag checking
 
-app.post("/checking-hashtag", async (req, res) => {
-  try {
-    const { username, textFromInput } = req.body;
+// app.post("/checking-hashtag", async (req, res) => {
+//   try {
+//     const { username, textFromInput } = req.body;
 
-    if (!username || !textFromInput) {
-      return res.status(400).json({ message: "Заполните поля" });
-    }
+//     if (!username || !textFromInput) {
+//       return res.status(400).json({ message: "Заполните поля" });
+//     }
 
-    const user = await User.findOne({ username });
+//     const user = await User.findOne({ username });
 
-    if (!user) {
-      return res.status(400).json({
-        message: "Вы не зарегистрированы",
-      });
-    }
+//     if (!user) {
+//       return res.status(400).json({
+//         message: "Вы не зарегистрированы",
+//       });
+//     }
 
-    const products = await Product.find({
-      hashtags: { $in: [textFromInput] },
-    });
+//     const products = await Product.find({
+//       hashtags: { $in: [textFromInput] },
+//     });
 
-    if (products.length === 0) {
-      return res.status(404).json({
-        message: "Товары с таким хештегом не найдены",
-      });
-    }
+//     if (products.length === 0) {
+//       return res.status(404).json({
+//         message: "Товары с таким хештегом не найдены",
+//       });
+//     }
 
-    return res.json({
-      success: true,
-      found: products.length,
-      products,
-    });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({
-      message: "Ошибка сервера",
-    });
-  }
-});
+//     return res.json({
+//       success: true,
+//       found: products.length,
+//       products,
+//     });
+//   } catch (err) {
+//     console.error(err);
+//     return res.status(500).json({
+//       message: "Ошибка сервера",
+//     });
+//   }
+// });
 
 app.post("/checking-hashtag", async (req, res) => {
   try {
