@@ -650,9 +650,6 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(cors());
 
-// ------------------------
-// Подключение MongoDB
-// ------------------------
 mongoose
   .connect(
     "mongodb+srv://ozodbek:sXu99PB55kKDGP9v@cluster0.ep0acoy.mongodb.net/mini-shop?retryWrites=true&w=majority&appName=Cluster0"
@@ -660,16 +657,10 @@ mongoose
   .then(() => console.log("MongoDB подключена"))
   .catch((err) => console.error("Ошибка подключения MongoDB:", err));
 
-// ------------------------
-// Подключение моделей
-// ------------------------
 const User = require("./models/User");
 const Product = require("./models/Product");
 const Basket = require("./models/Basket");
 
-// ------------------------
-// Валидация
-// ------------------------
 const RegistrationSchema = z.object({
   email: z.string().email(),
   username: z.string().min(5),
@@ -684,24 +675,15 @@ const aboutMyselfSchema = z.object({
   aboutmyself: z.string().min(1).max(500),
 });
 
-// ------------------------
-// Главная страница API
-// ------------------------
 app.get("/", (req, res) => {
   res.json({ message: "Mini Shop API is running!" });
 });
 
-// ------------------------
-// Получение списка пользователей
-// ------------------------
 app.get("/users", async (req, res) => {
   const users = await User.find({}, { Password: 0 });
   res.json({ users, total: users.length });
 });
 
-// ------------------------
-// Регистрация
-// ------------------------
 app.post("/registration", async (req, res) => {
   const result = RegistrationSchema.safeParse(req.body);
   if (!result.success)
@@ -719,9 +701,6 @@ app.post("/registration", async (req, res) => {
   res.json({ message: "Регистрация прошла успешно" });
 });
 
-// ------------------------
-// Логин
-// ------------------------
 app.post("/userverification", async (req, res) => {
   const { username, password } = req.body;
 
@@ -739,9 +718,6 @@ app.post("/userverification", async (req, res) => {
   });
 });
 
-// ------------------------
-// Смена пароля
-// ------------------------
 app.post("/change/password", async (req, res) => {
   const { oldUsername, newPassword } = req.body;
 
@@ -754,9 +730,6 @@ app.post("/change/password", async (req, res) => {
   res.json({ success: true, message: "Пароль изменён" });
 });
 
-// ------------------------
-// Смена username
-// ------------------------
 app.post("/change/username", async (req, res) => {
   const { oldUsername, newUsername } = req.body;
 
@@ -776,9 +749,6 @@ app.post("/change/username", async (req, res) => {
   });
 });
 
-// ------------------------
-// Загрузка аватарки
-// ------------------------
 app.post("/change/photo", async (req, res) => {
   const { username, img } = req.body;
 
@@ -791,9 +761,6 @@ app.post("/change/photo", async (req, res) => {
   res.json({ message: "Фото обновлено", img: user.img });
 });
 
-// ------------------------
-// Получение данных профиля
-// ------------------------
 app.post("/user_image_submission", async (req, res) => {
   const { username } = req.body;
 
@@ -807,9 +774,6 @@ app.post("/user_image_submission", async (req, res) => {
   });
 });
 
-// ------------------------
-// Обновление информации "о себе"
-// ------------------------
 app.post("/change/aboutmyself", async (req, res) => {
   const { username, aboutmyself } = req.body;
 
@@ -822,9 +786,6 @@ app.post("/change/aboutmyself", async (req, res) => {
   res.json({ success: true, message: "Информация обновлена" });
 });
 
-// ------------------------
-// Удаление аккаунта
-// ------------------------
 app.post("/delete/account", async (req, res) => {
   const { username } = req.body;
 
@@ -833,9 +794,6 @@ app.post("/delete/account", async (req, res) => {
   res.json({ success: true, message: "Аккаунт удалён" });
 });
 
-// ------------------------
-// Публикация товара
-// ------------------------
 app.post("/checking-product", async (req, res) => {
   const token = crypto.randomBytes(32).toString("hex");
 
@@ -848,17 +806,11 @@ app.post("/checking-product", async (req, res) => {
   res.json({ message: "Успешно опубликовано" });
 });
 
-// ------------------------
-// Получить товары
-// ------------------------
 app.get("/product", async (req, res) => {
   const products = await Product.find();
   res.json(products);
 });
 
-// ------------------------
-// Добавить в корзину
-// ------------------------
 app.post("/checkout-basket", async (req, res) => {
   const { username, product1token, price } = req.body;
 
@@ -907,6 +859,72 @@ app.post("/check-cart", async (req, res) => {
 // ------------------------
 // Запуск сервера
 // ------------------------
-app.listen(PORT, "0.0.0.0", () => {
+
+// hashtag checking
+
+app.post("/checking-hashtag", async (req, res) => {
+  try {
+    const { username, textFromInput } = req.body;
+
+    if (!username || !textFromInput) {
+      return res.status(400).json({ message: "Заполните поля" });
+    }
+
+    const user = await User.findOne({ username });
+
+    if (!user) {
+      return res.status(400).json({
+        message: "Вы не зарегистрированы",
+      });
+    }
+
+    const products = await Product.find({
+      hashtags: { $in: [textFromInput] },
+    });
+
+    if (products.length === 0) {
+      return res.status(404).json({
+        message: "Товары с таким хештегом не найдены",
+      });
+    }
+
+    return res.json({
+      success: true,
+      found: products.length,
+      products,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      message: "Ошибка сервера",
+    });
+  }
+});
+
+app.post("/checking-hashtag", async (req, res) => {
+  try {
+    const { searchQuery } = req.body;
+
+    if (!searchQuery) {
+      return res.status(400).json({ message: "Введите хештег" });
+    }
+
+    const products = await Product.find({
+      hashtags: { $in: [searchQuery] },
+    });
+    if (products.length === 0) {
+      return res.status(404).json({
+        message: "Товары с таким хештегом не найдены",
+      });
+    }
+
+    return res.json({ success: true, products, found: products.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Ошибка сервера" });
+  }
+});
+
+app.app.listen(PORT, "0.0.0.0", () => {
   console.log(`Сервер успешно запущен на порту ${PORT}`);
 });
