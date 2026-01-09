@@ -901,17 +901,28 @@ app.post("/check-cart", async (req, res) => {
 //   }
 // });
 
+
 app.post("/checking-hashtag", async (req, res) => {
   try {
     const { searchQuery } = req.body;
+
+    console.log("BODY:", req.body);
 
     if (!searchQuery) {
       return res.status(400).json({ message: "Введите хештег" });
     }
 
+    const clean = searchQuery.trim();
+
     const products = await Product.find({
-      hashtags: { $in: [searchQuery] },
+      hashtags: { 
+        $elemMatch: { 
+          $regex: `^${clean}$`, 
+          $options: "i" 
+        }
+      }
     });
+
     if (products.length === 0) {
       return res.status(404).json({
         message: "Товары с таким хештегом не найдены",
@@ -919,11 +930,13 @@ app.post("/checking-hashtag", async (req, res) => {
     }
 
     return res.json({ success: true, products, found: products.length });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Ошибка сервера" });
   }
 });
+
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Сервер успешно запущен на порту ${PORT}`);
