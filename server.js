@@ -925,6 +925,6 @@ app.post("/checking-hashtag", async (req, res) => {
   }
 });
 
-app.app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Сервер успешно запущен на порту ${PORT}`);
 });
